@@ -96,30 +96,28 @@ for debate in trump_debates:
         continue
     dates.append(date)
 
-# Iterate over each speaker pattern
 for speaker_pattern in speaker_patterns:
-    # Extract the speaker's name from the pattern (e.g., 'TRUMP' from 'TRUMP:\s*(.*?)(?=\n[A-Z]+:)')
+    # Extract the speaker's name from the REGEX pattern
     speaker_name = re.match(r'([A-Z]+):', speaker_pattern).group(1)
 
-    # Dictionary to store utterances by debate index for the current speaker
     speaker_text_by_debate = {}
-
     for i, text in enumerate(raw_texts):  # Enumerate to get the index of the debate
         matches = re.findall(speaker_pattern, text, re.DOTALL)
         if matches:
-            speaker_text_by_debate[i] = matches  # Store matches for this debate index
+            speaker_text_by_debate[i] = matches
 
-    # Save each group's text into a separate file
+    # Save each into a separate file
     for debate_index, speaker_texts in speaker_text_by_debate.items():
-        # Get the corresponding date for the debate
+        # Getting date
         if debate_index < len(dates):
             date = dates[debate_index]
         else:
-            date = "unknown_date"  # Fallback if no date is available
+            date = "unknown_date"
 
-        # Save the text for this debate
+        # Saveing to unique folder and name structure 
         save_scraped_text(
             speaker_texts,
             identifier=f"{speaker_name.lower()}_debate_{debate_index}",
+            base_directory=f"{speaker_name.lower()}",
             date=date
         )
