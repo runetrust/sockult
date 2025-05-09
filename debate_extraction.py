@@ -67,19 +67,18 @@ def extract_date(filename):
         date = None
     return date
 
-# Regex pattern to capture everything after TRUMP: up until the next speaker label
-# I need a list of regexes to extract all relevant speakers
-
 speaker_patterns = [
-    r'NIXON:\s*(.*?)(?=\n[A-Z]+:)',
-    r'FORD:\s*(.*?)(?=\n[A-Z]+:)',
-    r'CARTER:\s*(.*?)(?=\n[A-Z]+:)',
-    r'REAGAN:\s*(.*?)(?=\n[A-Z]+:)',
-    r'BUSH:\s*(.*?)(?=\n[A-Z]+:)',
-    r'CLINTON:\s*(.*?)(?=\n[A-Z]+:)',
-    r'OBAMA:\s*(.*?)(?=\n[A-Z]+:)',
-    r'TRUMP:\s*(.*?)(?=\n[A-Z]+:)',
-    r'BIDEN:\s*(.*?)(?=\n[A-Z]+:)'
+    r'(?:MR\. |MS\. )?NIXON:\s*(.*?)(?=\n(?:MR\. |MS\. )?[A-Z]+:)',
+    r'(?:MR\. |MS\. )?FORD:\s*(.*?)(?=\n(?:MR\. |MS\. )?[A-Z]+:)',
+    r'(?:MR\. |MS\. )?CARTER:\s*(.*?)(?=\n(?:MR\. |MS\. )?[A-Z]+:)',
+    r'(?:MR\. |MS\. )?REAGAN:\s*(.*?)(?=\n(?:MR\. |MS\. )?[A-Z]+:)',
+    r'(?:MR\. |MS\. )?BUSH:\s*(.*?)(?=\n(?:MR\. |MS\. )?[A-Z]+:)',
+    r'(?:MR\. |MS\. )?CLINTON:\s*(.*?)(?=\n(?:MR\. |MS\. )?[A-Z]+:)',
+    r'(?:MR\. |MS\. )?OBAMA:\s*(.*?)(?=\n(?:MR\. |MS\. )?[A-Z]+:)',
+    r'(?:MR\. |MS\. )?TRUMP:\s*(.*?)(?=\n(?:MR\. |MS\. )?[A-Z]+:)',
+    r'(?:MR\. |MS\. )?BIDEN:\s*(.*?)(?=\n(?:MR\. |MS\. )?[A-Z]+:)',
+    r'(?:MR\. |MS\. )?THE PRESIDENT:\s*(.*?)(?=\n(?:MR\. |MS\. )?[A-Z]+:)',
+    r'(?:MR\. |MS\. |SENATOR )?KENNEDY:\s*(.*?)(?=\n(?:MR\. |MS\. )?[A-Z]+:)'
 ]
 
 raw_texts = []
@@ -97,11 +96,17 @@ for debate in trump_debates:
     dates.append(date)
 
 for speaker_pattern in speaker_patterns:
-    # Extract the speaker's name from the REGEX pattern
-    speaker_name = re.match(r'([A-Z]+):', speaker_pattern).group(1)
+    # Extract name from regex with optional prefixes
+    match = re.search(r'(?:MR\. |MS\. )?([A-Z]+):', speaker_pattern)
+    if match:
+        speaker_name = match.group(1)  # Extract the speaker's name
+        speaker_name = speaker_name.replace(".", "_")
+    else:
+        print(f"Invalid speaker pattern: {speaker_pattern}")
+        continue 
 
     speaker_text_by_debate = {}
-    for i, text in enumerate(raw_texts):  # Enumerate to get the index of the debate
+    for i, text in enumerate(raw_texts):
         matches = re.findall(speaker_pattern, text, re.DOTALL)
         if matches:
             speaker_text_by_debate[i] = matches
