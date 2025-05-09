@@ -2,21 +2,6 @@ import re
 import os
 import glob
 
-'''
-CONCEPTUAL:
-glob.glob all scraped debates
-extract names from actual file (no robust way to get this into file name)
-    (How do i do this with a regex that doesn't capture CPD: and so on?)
-Would i need to manually make a list of relevant candidates and loop over them to extract text?
-I think this is needed to get relevant capture groups 
-
-
-
-Right now I have all trump in one file, which is saved with a date from a different debate
-I need to split text out into files per year / debate per speaker.
-    A folder with trump would contain ~ 3 files saved with each relevant date
-'''
-
 def save_scraped_text(raw_text, identifier, date, base_directory='debates'):
     """
     Save scraped text to a file with a timestamped filename.
@@ -84,7 +69,18 @@ def extract_date(filename):
 
 # Regex pattern to capture everything after TRUMP: up until the next speaker label
 # I need a list of regexes to extract all relevant speakers
-trump_pattern = r'TRUMP:\s*(.*?)(?=\n[A-Z]+:)'
+
+speaker_patterns = [
+    r'NIXON:\s*(.*?)(?=\n[A-Z]+:)',
+    r'FORD:\s*(.*?)(?=\n[A-Z]+:)',
+    r'CARTER:\s*(.*?)(?=\n[A-Z]+:)',
+    r'REAGAN:\s*(.*?)(?=\n[A-Z]+:)',
+    r'BUSH:\s*(.*?)(?=\n[A-Z]+:)',
+    r'CLINTON:\s*(.*?)(?=\n[A-Z]+:)',
+    r'OBAMA:\s*(.*?)(?=\n[A-Z]+:)',
+    r'TRUMP:\s*(.*?)(?=\n[A-Z]+:)',
+    r'BIDEN:\s*(.*?)(?=\n[A-Z]+:)'
+]
 
 raw_texts = []
 for debate in trump_debates:
@@ -100,20 +96,30 @@ for debate in trump_debates:
         continue
     dates.append(date)
 
-# Dictionary to get key-value pairs
-trump_text_by_debate = {}
+# Iterate over each speaker pattern
+for speaker_pattern in speaker_patterns:
+    # Extract the speaker's name from the pattern (e.g., 'TRUMP' from 'TRUMP:\s*(.*?)(?=\n[A-Z]+:)')
+    speaker_name = re.match(r'([A-Z]+):', speaker_pattern).group(1)
 
-for i, text in enumerate(raw_texts):  # Enumerate to get the index of the debate
-    matches = re.findall(trump_pattern, text, re.DOTALL)
-    if matches:
-        trump_text_by_debate[i] = matches  # Store matches for this debate index
+    # Dictionary to store utterances by debate index for the current speaker
+    speaker_text_by_debate = {}
 
-# Save each group's text into a separate file
-for debate_index, trump_texts in trump_text_by_debate.items():
-    # Making sure we don't go beyond date list
-    if debate_index < len(dates):
-        date = dates[debate_index]
-    else:
-        date = "unknown_date"
+    for i, text in enumerate(raw_texts):  # Enumerate to get the index of the debate
+        matches = re.findall(speaker_pattern, text, re.DOTALL)
+        if matches:
+            speaker_text_by_debate[i] = matches  # Store matches for this debate index
 
-    save_scraped_text(trump_texts, identifier=f"trump_debate_{debate_index}", date=date)
+    # Save each group's text into a separate file
+    for debate_index, speaker_texts in speaker_text_by_debate.items():
+        # Get the corresponding date for the debate
+        if debate_index < len(dates):
+            date = dates[debate_index]
+        else:
+            date = "unknown_date"  # Fallback if no date is available
+
+        # Save the text for this debate
+        save_scraped_text(
+            speaker_texts,
+            identifier=f"{speaker_name.lower()}_debate_{debate_index}",
+            date=date
+        )
