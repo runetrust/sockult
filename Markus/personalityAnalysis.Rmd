@@ -1,0 +1,793 @@
+---
+title: "Personality_Analysis"
+author: "Markus Lundsfryd Jensen"
+date: "2025-05-09"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(pacman)
+
+pacman::p_load(tidyverse,
+               lme4,
+               dplyr,
+               ggplot2,
+               emmeans)
+
+
+personality_data = read.csv('./PersonalityData.csv')
+```
+
+
+
+Scale bold level and change class of 
+```{r}
+personality_data <-  
+  personality_data %>%
+  mutate(Candidate = as.factor(Candidate),
+         Topic = as.factor(Topic),
+         party = as.factor(party),
+         bold_level = as.numeric(scale(bold_level)))
+
+topic_counts <- personality_data %>%
+  dplyr::count(Topic, name = "count") %>%
+  arrange(desc(count))
+
+filtered_data <- personality_data
+
+#OBS: Might not need this
+# Filter out topics with fewer than 10 occurrences
+filtered_data <- personality_data %>%
+  group_by(Topic) %>%
+  filter(n() >= 10)
+
+
+```
+
+
+
+```{r}
+
+#plot 10 mosty used topics
+personality_data %>% 
+  dplyr::count(Topic, name = "n")  %>% 
+  arrange(desc(n)) %>%
+  slice_head(n = 10) %>% 
+  ggplot(aes(x = fct_reorder(Topic, n),
+                  y = n)) +
+  geom_col() +
+  coord_flip() +
+  labs(title = "Top 10 Topics by Count",
+       x = "Topic",
+       y = "Count") +
+  theme_minimal()
+
+ggsave("top10topics.png")
+
+```
+
+
+
+
+
+**Now make the above with a bayesian approach**
+
+
+```{r}
+model_data <- data.frame(
+  bold = filtered_data$bold_level,
+  party = as.factor(filtered_data$party),
+  topic = as.factor(filtered_data$Topic),  # convert to index
+  candidate = as.factor(filtered_data$Candidate)
+)
+
+
+```
+
+
+```{r}
+
+#OBS priors for binary variables in rethinking
+
+# rstanarm for multilevel models
+library(rstanarm)
+
+
+#model_data$party <- as.factor(model_data$party)
+
+party_model_stan <- stan_lmer(
+  bold ~ 0 + party + (1 | topic),  # 0 + party forces estimation of all levels
+  data = model_data,
+  prior = normal(0, 1),            # shared prior across all party levels
+  prior_intercept = NULL,         # no global intercept needed
+  prior_aux = exponential(1), #sigma prior
+  prior_covariance = decov(regularization = 1), #regularisation ontrols the strength of shrinkage on group level effects
+  algorithm = "sampling", #sampling is MCMC
+  adapt_delta = 0.95, #increasing adapt_delta will result in a smaller step size and fewer divergences
+  QR = FALSE  #maybe true for computational purposes
+)
+
+```
+Look at the chains
+```{r}
+#Plot some hairy cattepillars
+
+library(rethinking)
+
+library(bayesplot)
+#launch_shinystan(party_model_stan, ppd = FALSE)
+
+```
+
+
+```{r}
+#Predicted posterior
+posterior <- as.data.frame(party_model_stan)
+names(posterior)
+```
+
+
+```{r}
+library(dplyr)
+posterior <- posterior %>%
+  rename("Democratic" = partyDemocratic,
+         "Republican" = partyRepublican)
+
+mcmc_areas(posterior, 
+           pars = c("Democratic", "Republican"), 
+           prob = 0.95) +
+  ggtitle("Posterior distribution of the effects by party")
+
+
+```
+
+
+```{r}
+# Select relevant columns and pivot to long format
+posterior_long <- posterior %>%
+  select(Democratic, Republican) %>%
+  pivot_longer(cols = everything(), 
+               names_to = "Party", 
+               values_to = "Effect") %>%
+  mutate(Party = recode(Party, 
+                        Democratic = "Democrats",
+                        Republican = "Republicans"))
+
+# Plot with specified colors
+ggplot(posterior_long, aes(x = Effect, fill = Party, color = Party)) +
+  geom_density(alpha = 0.4, size = 1) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  scale_fill_manual(values = c("Democrats" = "skyblue", "Republicans" = "red")) +
+  scale_color_manual(values = c("Democrats" = "skyblue", "Republicans" = "red")) +
+  labs(
+    title = "Posterior Distributions of Party Effects",
+    x = "Effect on Boldness",
+    y = "Density"
+  ) +
+  theme_minimal()
+
+ggsave("posteriorPartyEffects.png")
+```
+
+```{r}
+library(ggplot2)
+
+# Compute the posterior difference
+posterior$party_diff <- posterior$Republican - posterior$Democratic
+
+# Plot the difference
+ggplot(posterior, aes(x = party_diff)) +
+  geom_density(fill = "skyblue", alpha = 0.5) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  labs(
+    title = "Posterior Distribution of the Difference: Republicans − Democrats",
+    x = "Difference in Effect",
+    y = "Density"
+  ) +
+  theme_minimal()
+
+ggsave("posteriorDifferencePartyEffect.png")
+
+```
+
+```{r}
+names(posterior)
+```
+
+
+
+
+Now for the candidates
+
+```{r}
+
+
+candidate_model_stan <- stan_lmer(
+  bold ~ 0 + candidate + (1 | topic),  # 0 + party forces estimation of all levels
+  data = model_data,
+  prior = normal(0, 1),            # shared prior across all party levels
+  prior_intercept = NULL,         # no global intercept needed
+  prior_aux = exponential(1), #sigma prior
+  prior_covariance = decov(regularization = 1), #regularisation ontrols the strength of shrinkage on group level effects
+  algorithm = "sampling", #sampling is MCMC
+  adapt_delta = 0.95, #increasing adapt_delta will result in a smaller step size and fewer divergences
+  QR = FALSE  #maybe true for computational purposes
+)
+```
+
+
+
+```{r}
+posterior_candidate <- as.data.frame(candidate_model_stan)
+names(posterior_candidate)
+
+```
+
+
+```{r}
+library(dplyr)
+posterior_candidate <- posterior_candidate %>%
+  rename("Biden" = candidatebiden, 
+         "Carter" = candidatecarter,
+         "Clinton" = candidateclinton,
+         "Ford" = candidateford,
+         "HW_Bush" = candidatehw_bush,
+         "Kenedy" = candidatekennedy,
+         "Nixon" = candidatenixon,
+         "Obama" = candidateobama,
+         "Reagan" =  candidatereagan,
+         "Trump" = candidatetrump,
+         "W_Bush" = candidatew_bush)
+
+mcmc_areas(posterior_candidate, 
+           pars = c("Biden", 
+                    "Carter", 
+                    "Clinton",
+                    "Ford",
+                    "HW_Bush",
+                    "Kenedy",
+                    "Nixon",
+                    "Obama",
+                    "Reagan",
+                    "Trump",
+                    "W_Bush"), 
+           
+           prob = 0.95) +
+  
+  ggtitle("Posterior distribution of the effects by candidate")+
+  
+  xlab("Effect size")+
+  ylab("President")
+
+ggsave("posteriorEffectsCandidate.png")
+
+
+```
+
+
+```{r}
+# Select relevant columns and pivot to long format
+posterior_long_candidates <- posterior_candidate %>%
+  select("Biden", 
+                    "Carter", 
+                    "Clinton",
+                    "Ford",
+                    "HW_Bush",
+                    "Kenedy",
+                    "Nixon",
+                    "Obama",
+                    "Reagan",
+                    "Trump",
+                    "W_Bush") %>%
+  pivot_longer(cols = everything(), 
+               names_to = "Candidate", 
+               values_to = "Effect")
+
+# Plot with specified colors
+ggplot(posterior_long_candidates, aes(x = Effect, fill = Candidate, color = Candidate)) +
+  geom_density(alpha = 0.4, size = 1) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  #scale_fill_manual(values = c("Democrats" = "skyblue", "Republicans" = "red")) +
+  #scale_color_manual(values = c("Democrats" = "skyblue", "Republicans" = "red")) +
+  labs(
+    title = "Posterior Distributions of Candidate Effects",
+    x = "Effect on Boldness",
+    y = "Density"
+  ) +
+  theme_minimal()
+
+
+```
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(purrr)
+
+# 1. Extract posterior draws for candidates
+# Assuming `posterior_candidate` is a dataframe with samples in columns named after candidates
+
+candidates <- c("Biden", "Carter", "Clinton", "Ford", "HW_Bush", "Kenedy", 
+                "Nixon", "Obama", "Reagan", "Trump", "W_Bush")
+
+posterior_sub <- posterior_candidate %>% select(all_of(candidates))
+
+# Pivot posterior_sub to long format: samples x candidates
+posterior_long <- posterior_sub %>%
+  mutate(draw = row_number()) %>%
+  pivot_longer(-draw, names_to = "candidate", values_to = "effect")
+
+# Get all candidate names
+candidates <- unique(posterior_long$candidate)
+
+# Generate all pairwise candidate pairs
+pairs <- combn(candidates, 2, simplify = FALSE)
+
+# Compute differences by joining draws and subtracting effects
+diff_list <- map_dfr(pairs, function(pair) {
+  lhs <- posterior_long %>% filter(candidate == pair[1]) %>% select(draw, lhs_effect = effect)
+  rhs <- posterior_long %>% filter(candidate == pair[2]) %>% select(draw, rhs_effect = effect)
+  diff_df <- left_join(lhs, rhs, by = "draw") %>%
+    mutate(
+      Contrast = paste(pair[1], "vs", pair[2]),
+      Difference = lhs_effect - rhs_effect
+    ) %>%
+    select(Contrast, Difference)
+  diff_df
+})
+
+# Now diff_list has all pairwise contrasts in long format for plotting etc.
+
+posterior_diffs <- bind_rows(diff_list)
+
+# 3. (Optional) summarize each contrast for plotting intervals
+summary_diffs <- posterior_diffs %>%
+  group_by(Contrast) %>%
+  summarize(
+    median = median(Difference),
+    lower = quantile(Difference, 0.025),
+    upper = quantile(Difference, 0.975)
+  ) %>%
+  arrange(median)
+
+party_lookup <- tibble(
+  candidate = c("Biden", "Carter", "Clinton", "Obama", "Kenedy",
+                "Trump", "Reagan", "Nixon", "Ford", "HW_Bush", "W_Bush"),
+  party = c("Democrat", "Democrat", "Democrat", "Democrat", "Democrat",
+            "Republican", "Republican", "Republican", "Republican", "Republican", "Republican")
+)
+
+
+summary_diffs_labeled <- summary_diffs %>%
+  separate(Contrast, into = c("candidate1", "candidate2"), sep = " vs ") %>%
+  left_join(party_lookup, by = c("candidate1" = "candidate")) %>%
+  rename(party1 = party) %>%
+  left_join(party_lookup, by = c("candidate2" = "candidate")) %>%
+  rename(party2 = party) %>%
+  mutate(
+    comparison_type = case_when(
+      party1 == party2 & party1 == "Democrat" ~ "Democrat vs Democrat",
+      party1 == party2 & party1 == "Republican" ~ "Republican vs Republican",
+      party1 != party2 ~ "Democrat vs Republican"
+    )
+  )
+
+
+
+
+
+```
+
+
+
+plot
+```{r}
+#Plot contrasts with intervals
+
+ggplot(summary_diffs_labeled, aes(x = median, y = reorder(paste(candidate1, "vs", candidate2), median))) +
+  geom_point(aes(color = comparison_type)) +
+  geom_errorbarh(aes(xmin = lower, xmax = upper, color = comparison_type), height = 0.3) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray50") +
+  labs(
+    title = "95% Credible Intervals for Pairwise Differences Between Candidates",
+    x = "Difference in Effect Size",
+    y = "Candidate Contrast",
+    color = "Comparison Type"
+  ) +
+  scale_color_manual(values = c(
+    "Democrat vs Democrat" = "skyblue",
+    "Republican vs Republican" = "firebrick",
+    "Democrat vs Republican" = "purple"
+  )) +
+  theme_minimal()
+
+ggsave("pairwiseCandidates.png", height = 10)
+```
+#OBS the above might be problematic as there is not being controlled for multiple comparisons?? Bayesian False Discovery Rate (FDR) methods??
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+
+# 1. Filter contrasts where 95% credible interval excludes 0
+significant_diffs <- summary_diffs_labeled %>%
+  filter(lower > 0 | upper < 0) %>%
+  mutate(Contrast = paste(candidate1, "vs", candidate2))  # Recreate full contrast label for plotting
+
+# 2. Plot only significant contrasts
+ggplot(significant_diffs, aes(x = median, y = reorder(Contrast, median))) +
+  geom_point(aes(color = comparison_type)) +
+  geom_errorbarh(aes(xmin = lower, xmax = upper, color = comparison_type), height = 0.3) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray50") +
+  labs(
+    title = "Significant Pairwise Differences",
+    x = "Difference in Effect Size",
+    y = "Candidate Contrast",
+    color = "Comparison Type"
+  ) +
+  scale_color_manual(values = c(
+    "Democrat vs Democrat" = "skyblue",
+    "Republican vs Republican" = "firebrick",
+    "Democrat vs Republican" = "purple"
+  )) +
+  theme_minimal()
+
+
+
+ggsave("significantPairwiseCandidates.png")
+
+```
+All good
+
+*Do something with the topics. Maybe check how different values of bold are apparent in different topics - what topics are highest in bold maybe interaction between this and party? Also some simple stuff: what topics are most presently discussed (maybe over time). Also include, maybe just some short statistics, about the level of similarity, now that we have it.*
+
+Now for some topics stuff, only working with party model
+```{r}
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(ggplot2)
+
+# Extract all topic-level intercept columns
+topic_effects <- posterior %>%
+  select(starts_with("b[(Intercept) topic:")) %>%
+  pivot_longer(cols = everything(), names_to = "topic", values_to = "effect")
+
+# Clean up topic names
+topic_effects <- topic_effects %>%
+  mutate(topic = str_remove_all(topic, "r_topic\\[|,Intercept\\]"))
+
+```
+
+```{r}
+
+library(stringr)
+
+topic_summary <- topic_effects %>%
+  mutate(topic = str_replace(topic, "^b\\[\\(Intercept\\) topic:", "")) %>%
+  mutate(topic = str_replace(topic, "\\]$", "")) %>%
+  mutate(topic = str_replace_all(topic, "_", " ")) %>%
+  group_by(topic) %>%
+  summarize(
+    median = median(effect),
+    lower = quantile(effect, 0.025),
+    upper = quantile(effect, 0.975)
+  ) %>%
+  arrange(median)
+
+```
+
+
+```{r}
+ggplot(topic_summary, aes(x = median, y = reorder(topic, median))) +
+  geom_point(color = "black") +
+  geom_errorbarh(aes(xmin = lower, xmax = upper), height = 0.2, color = "darkgray") +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  labs(
+    title = "Posterior Topic-Level Effects with Shrinkage",
+    x = "Estimated Topic Effect (Random Intercept)",
+    y = "Topic"
+  ) +
+  theme_minimal()
+
+ggsave("plot.png", height = 10, width = 8)
+
+```
+
+Once again
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(ggplot2)
+
+# Create domain mapping (based on your documentation)
+domain_map <- tibble(
+  domain = 1:7,
+  domain_label = c(
+    "Domain 1: External Relations",
+    "Domain 2: Freedom and Democracy",
+    "Domain 3: Political System",
+    "Domain 4: Economy",
+    "Domain 5: Welfare and Quality of Life",
+    "Domain 6: Fabric of Society",
+    "Domain 7: Social Groups"
+  ),
+  domain_color = c("red", "blue", "green", "orange", "purple", "brown", "pink")
+)
+
+# Filter topic-level intercepts and extract domain
+posterior_long <- posterior %>%
+  select(starts_with("b[(Intercept) topic:")) %>%
+  pivot_longer(cols = everything(), names_to = "param", values_to = "effect") %>%
+  mutate(
+    topic = str_replace(param, "^b\\[\\(Intercept\\) topic:", ""),
+    topic = str_replace(topic, "\\]$", ""),
+    topic_clean = str_replace_all(topic, "_", " "),
+    topic_number = as.integer(str_extract(topic, "^\\d+")),
+    domain = floor(topic_number / 100)
+  ) %>%
+  left_join(domain_map, by = "domain")
+
+# Summarize posterior
+topic_summary <- posterior_long %>%
+  group_by(topic_clean, domain_label, domain_color) %>%
+  summarize(
+    median = median(effect),
+    lower = quantile(effect, 0.025),
+    upper = quantile(effect, 0.975),
+    .groups = "drop"
+  ) %>%
+  arrange(median)
+
+# Plot
+ggplot(topic_summary, aes(x = median, y = reorder(topic_clean, median), color = domain_label)) +
+  geom_point() +
+  geom_errorbarh(aes(xmin = lower, xmax = upper), height = 0.3) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray50") +
+  scale_color_manual(values = setNames(domain_map$domain_color, domain_map$domain_label)) +
+  labs(
+    title = "Posterior Topic-Level Effects by Domain",
+    x = "Effect Size",
+    y = "Topic",
+    color = "Domain"
+  ) +
+  theme_minimal()
+
+ggsave("topiclevelEffects.png", height = 10, width = 8)
+```
+
+```{r}
+library(dplyr)
+library(ggplot2)
+
+# Step 1: Remove duplicates so each candidate has only one score per topic
+unique_scores <- personality_data %>%
+  distinct(Candidate, Topic, .keep_all = TRUE)
+
+# Step 2: Calculate mean and 95% confidence intervals for each topic
+topic_summary <- unique_scores %>%
+  group_by(Topic) %>%
+  summarize(
+    mean_score = mean(Similarity_Score, na.rm = TRUE),
+    lower_ci = mean_score - qt(0.975, df = n() - 1) * sd(Similarity_Score) / sqrt(n()),
+    upper_ci = mean_score + qt(0.975, df = n() - 1) * sd(Similarity_Score) / sqrt(n())
+  ) %>%
+  arrange(desc(mean_score))
+
+# Step 3: Plot using ggplot2
+ggplot(topic_summary, aes(x = mean_score, y = reorder(Topic, mean_score))) +
+  geom_point() +
+  geom_errorbarh(aes(xmin = lower_ci, xmax = upper_ci), height = 0.3) +
+  labs(
+    title = "Mean Similarity Score by Topic (with 95% CI)",
+    x = "Mean Similarity Score",
+    y = "Topic"
+  ) +
+  theme_minimal()
+
+ggsave("similarityscoreTopics.png")
+```
+
+```{r}
+library(dplyr)
+library(ggplot2)
+
+# Step 1: One similarity score per Candidate-Topic pair
+unique_scores <- personality_data %>%
+  distinct(Candidate, Topic, .keep_all = TRUE)
+
+# Step 2: Calculate summary stats
+topic_summary <- unique_scores %>%
+  group_by(Topic) %>%
+  summarize(
+    mean_score = mean(Similarity_Score, na.rm = TRUE),
+    lower_ci = mean_score - qt(0.975, df = n() - 1) * sd(Similarity_Score) / sqrt(n()),
+    upper_ci = mean_score + qt(0.975, df = n() - 1) * sd(Similarity_Score) / sqrt(n())
+  ) %>%
+  arrange(desc(mean_score))
+
+# Plot 1: With 95% confidence intervals
+plot_with_ci <- ggplot(topic_summary, aes(x = mean_score, y = reorder(Topic, mean_score))) +
+  geom_point() +
+  geom_errorbarh(aes(xmin = lower_ci, xmax = upper_ci), height = 0.3) +
+  labs(
+    title = "Mean Similarity Score by Topic (with 95% CI)",
+    x = "Mean Similarity Score",
+    y = "Topic"
+  ) +
+  theme_minimal()
+
+# Plot 2: Without confidence intervals
+plot_without_ci <- ggplot(topic_summary, aes(x = mean_score, y = reorder(Topic, mean_score))) +
+  geom_point(color = "steelblue") +
+  labs(
+    title = "Mean Similarity Score by Topic",
+    x = "Mean Similarity Score",
+    y = "Topic"
+  ) +
+  theme_minimal()
+
+# Print both plots
+print(plot_with_ci)
+print(plot_without_ci)
+
+ggsave("meanSimilarityScoreTopic.png")
+
+```
+
+
+
+**Skraldespand **
+
+```{r}
+alist <- alist(Bold ~dnorm(mu, sigma),
+               mu <- a[Party],
+               )
+simple_party_model <- quap(alist, data = dat_list)
+
+
+
+simple_party_model<- quap(
+  alist(
+    Bold ~ dnorm( mu , sigma ) ,
+    mu <- a[Party] ,
+    a[Party] ~ dnorm( 0 , 1 ) ,
+    sigma ~ exponential(1)), data=dat_list )
+
+
+precis( m5.8 , depth=2 )
+
+# Extract samples
+posterior <- extract.samples(party_model)
+
+# If you used b_party[P] as a group mean for each party (say 1 = Democrat, 2 = Republican):
+diff_posterior <- posterior$b_party[,2] - posterior$b_party[,1]
+
+# Plot the posterior difference
+dens(diff_posterior, col = "skyblue", lwd = 2)
+abline(v = 0, col = "red", lty = 2)
+
+
+
+
+
+model_data$N_topic <- length(unique(model_data$topic))
+
+simple_party_model <- quap(
+alist(
+bold ~ dnorm( mu , sigma ) ,
+mu <- a[party] ,
+a[party] ~ dnorm(0 , 1 ) ,
+sigma ~ dexp(1)
+) , data=model_data )
+
+
+
+precis( simple_party_model , depth=2 )
+
+multilevel_model <- quap(
+  alist(
+    bold ~ dnorm(mu, sigma),
+    mu <- a[party] + z[topic],
+    
+    # Fixed effects
+    a[party] ~ dnorm(0, 1),
+    
+    # Random intercepts for topic
+    z[topic] ~ dnorm(mu_z, sigma_topic),
+    mu_z <- 0,
+    sigma_topic ~ dexp(1),
+    
+    # Observation-level noise
+    sigma ~ dexp(1)
+  ),
+  data = model_data
+)
+```
+
+make lmer model that predicts bold level by party
+
+```{r}
+party_model <- lmerTest::lmer(bold_level ~  party +(1|Topic), data = filtered_data)
+summary(party_model)
+```
+```{r}
+emm_party <- emmeans(party_model, ~ party)
+emm_party_df <- as.data.frame(emm_party)
+```
+
+
+```{r}
+
+
+ggplot(emm_party_df, aes(x = party, y = emmean, fill = party)) +
+  geom_bar(stat = "identity", position = position_dodge(), width = 0.6, color = "black") +
+  geom_errorbar(aes(ymin = emmean - SE, ymax = emmean + SE), width = 0.2, position = position_dodge(0.6)) +
+  scale_fill_manual(values = c("Democratic" = "#2E86AB", "Republican" = "#D64550")) +
+  ylab("Estimated Bold Level") +
+  xlab("Party") +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+```
+
+
+
+```{r}
+candidate_model <- lmerTest::lmer(bold_level ~  Candidate  +(1|Topic), data = filtered_data)
+summary(candidate_model)
+```
+```{r}
+
+# Get estimated marginal means for each candidate
+emm <- emmeans(candidate_model, ~ Candidate)
+
+# Pairwise comparisons between all candidates
+pairs(emm)
+
+```
+#What values were significant?*
+
+```{r}
+# obama - trump       0.5687 0.1040 1409   5.471  <.0001
+# obama - w_bush      0.5473 0.0957 1405   5.721  <.0001
+# obama - reagan      0.4491 0.1180 1403   3.812  0.0067
+#  hw_bush - obama    -0.4751 0.1010 1402  -4.704  0.0001
+# clinton - trump     0.3682 0.1130 1404   3.251  0.0461
+# clinton - w_bush    0.3468 0.1060 1398   3.266  0.0440
+#carter - obama     -0.4329 0.1150 1398  -3.757  0.0082
+# biden - nixon      -0.5287 0.1510 1403  -3.490  0.0213
+# biden - obama      -0.6774 0.1110 1395  -6.091  <.0001
+# biden - clinton    -0.4769 0.1200 1395  -3.964  0.0037
+```
+
+Do some visualization: 
+
+
+```{r}
+emm_df <- as.data.frame(emm)
+
+# Get unique candidate-party mapping
+party_map <- filtered_data %>%
+  select(Candidate, party) %>%
+  distinct()
+
+# Join with emm_df
+emm_df <- left_join(emm_df, party_map, by = "Candidate")
+
+ggplot(emm_df, aes(x = Candidate, y = emmean, color = party)) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(ymin = emmean - SE, ymax = emmean + SE), width = 0.2) +
+  ylab("Estimated Bold Level") +
+  scale_color_manual(values = c("Democratic" = "#2E86AB", "Republican" = "#D64550")) +
+  theme_minimal() +
+  theme(legend.position = "top")
+```
