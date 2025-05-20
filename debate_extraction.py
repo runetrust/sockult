@@ -21,6 +21,7 @@ def save_scraped_text(raw_text, identifier, date, base_directory='debates'):
     # Generate a unique filename
     filename = f"{identifier}_{date}.txt"
     full_path = os.path.join(base_directory, filename)
+
     
     # Save the text with UTF-8 encoding to support various characters
     try:
@@ -68,17 +69,17 @@ def extract_date(filename):
     return date
 
 speaker_patterns = [
-    r'(?:MR\. |MS\. )?NIXON:\s*(.*?)(?=\n(?:MR\. |MS\. )?[A-Z]+:)',
-    r'(?:MR\. |MS\. )?FORD:\s*(.*?)(?=\n(?:MR\. |MS\. )?[A-Z]+:)',
-    r'(?:MR\. |MS\. )?CARTER:\s*(.*?)(?=\n(?:MR\. |MS\. )?[A-Z]+:)',
-    r'(?:MR\. |MS\. )?REAGAN:\s*(.*?)(?=\n(?:MR\. |MS\. )?[A-Z]+:)',
-    r'(?:MR\. |MS\. )?BUSH:\s*(.*?)(?=\n(?:MR\. |MS\. )?[A-Z]+:)',
-    r'(?:MR\. |MS\. )?CLINTON:\s*(.*?)(?=\n(?:MR\. |MS\. )?[A-Z]+:)',
-    r'(?:MR\. |MS\. )?OBAMA:\s*(.*?)(?=\n(?:MR\. |MS\. )?[A-Z]+:)',
-    r'(?:MR\. |MS\. )?TRUMP:\s*(.*?)(?=\n(?:MR\. |MS\. )?[A-Z]+:)',
-    r'(?:MR\. |MS\. )?BIDEN:\s*(.*?)(?=\n(?:MR\. |MS\. )?[A-Z]+:)',
-    r'(?:MR\. |MS\. )?THE PRESIDENT:\s*(.*?)(?=\n(?:MR\. |MS\. )?[A-Z]+:)',
-    r'(?:MR\. |MS\. |SENATOR )?KENNEDY:\s*(.*?)(?=\n(?:MR\. |MS\. )?[A-Z]+:)'
+    r'(?:MR\. |MS\. )?NIXON:\s*(.*?)(?=\n(?:MR\. |MS\. )?[A-Za-z]+:)',
+    r'(?:MR\. |MS\. )?FORD:\s*(.*?)(?=\n(?:MR\. |MS\. )?[A-Za-z]+:)',
+    r'(?:MR\. |MS\. )?CARTER:\s*(.*?)(?=\n(?:MR\. |MS\. )?[A-Za-z]+:)',
+    r'(?:MR\. |MS\. )?REAGAN:\s*(.*?)(?=\n(?:MR\. |MS\. )?[A-Za-z]+:)',
+    r'(?:MR\. |MS\. )?BUSH:\s*(.*?)(?=\n(?:MR\. |MS\. )?[A-Za-z]+:)',
+    r'(?:MR\. |MS\. )?CLINTON:\s*(.*?)(?=\n(?:MR\. |MS\. )?[A-Za-z]+:)',
+    r'(?:MR\. |MS\. )?OBAMA:\s*(.*?)(?=\n(?:MR\. |MS\. )?[A-Za-z]+:)',
+    r'(?:MR\. |MS\. )?TRUMP:\s*(.*?)(?=\n(?:MR\. |MS\. )?[A-Za-z]+:)',
+    r'(?:MR\. |MS\. )?BIDEN:\s*(.*?)(?=\n(?:MR\. |MS\. )?[A-Za-z]+:)',
+    r'(?:MR\. |MS\. )?THE PRESIDENT:\s*(.*?)(?=\n(?:MR\. |MS\. )?[A-Za-z]+:)',
+    r'(?:MR\. |MS\. |SENATOR )?KENNEDY:\s*(.*?)(?=\n(?:MR\. |MS\. )?[A-Za-z]+:)'
 ]
 
 raw_texts = []
