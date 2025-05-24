@@ -41,9 +41,9 @@ filtered_data <- personality_data
 
 #OBS: Might not need this
 # Filter out topics with fewer than 10 occurrences
-filtered_data <- personality_data %>%
-  group_by(Topic) %>%
-  filter(n() >= 10)
+#filtered_data <- personality_data %>%
+ # group_by(Topic) %>%
+  #filter(n() >= 10)
 
 
 ```
@@ -66,7 +66,7 @@ personality_data %>%
        y = "Count") +
   theme_minimal()
 
-ggsave("top10topics.png")
+#ggsave("top10topics.png")
 
 ```
 
@@ -81,7 +81,7 @@ ggsave("top10topics.png")
 model_data <- data.frame(
   bold = filtered_data$bold_level,
   party = as.factor(filtered_data$party),
-  topic = as.factor(filtered_data$Topic),  # convert to index
+  topic = as.factor(filtered_data$Topic), 
   candidate = as.factor(filtered_data$Candidate)
 )
 
@@ -105,7 +105,11 @@ party_model_stan <- stan_lmer(
   prior = normal(0, 1),            # shared prior across all party levels
   prior_intercept = NULL,         # no global intercept needed
   prior_aux = exponential(1), #sigma prior
-  prior_covariance = decov(regularization = 1), #regularisation ontrols the strength of shrinkage on group level effects
+  prior_covariance = decov(
+    scale = 1,                    # mean 0, sd 1 for random effect SDs
+    regularization = 1,           # partial pooling; larger = more shrinkage
+    concentration = 1             # LKJ prior on correlation matrix (1 = uniform)
+  ), #regularisation ontrols the strength of shrinkage on group level effects
   algorithm = "sampling", #sampling is MCMC
   adapt_delta = 0.95, #increasing adapt_delta will result in a smaller step size and fewer divergences
   QR = FALSE  #maybe true for computational purposes
@@ -119,7 +123,7 @@ Look at the chains
 library(rethinking)
 
 library(bayesplot)
-#launch_shinystan(party_model_stan, ppd = FALSE)
+launch_shinystan(party_model_stan, ppd = FALSE)
 
 ```
 
@@ -128,6 +132,7 @@ library(bayesplot)
 #Predicted posterior
 posterior <- as.data.frame(party_model_stan)
 names(posterior)
+precis(posterior)
 ```
 
 
@@ -144,6 +149,25 @@ mcmc_areas(posterior,
 
 
 ```
+
+```{r}
+library(bayesplot)
+library(ggplot2)
+
+summary_stats <- data.frame(
+  mean = mean(posterior$party_diff),
+  sd = sd(posterior$party_diff),
+  lower = quantile(posterior$party_diff, 0.025),
+  upper = quantile(posterior$party_diff, 0.975)
+)
+
+print(summary_stats)
+
+
+
+
+```
+
 
 
 ```{r}
@@ -170,7 +194,7 @@ ggplot(posterior_long, aes(x = Effect, fill = Party, color = Party)) +
   ) +
   theme_minimal()
 
-ggsave("posteriorPartyEffects.png")
+ggsave("posteriorPartyEffects.png", height = 7, width = 7)
 ```
 
 ```{r}
@@ -212,7 +236,11 @@ candidate_model_stan <- stan_lmer(
   prior = normal(0, 1),            # shared prior across all party levels
   prior_intercept = NULL,         # no global intercept needed
   prior_aux = exponential(1), #sigma prior
-  prior_covariance = decov(regularization = 1), #regularisation ontrols the strength of shrinkage on group level effects
+  prior_covariance = decov(
+    scale = 1,                    # mean 0, sd 1 for random effect SDs
+    regularization = 1,           # partial pooling; larger = more shrinkage
+    concentration = 1             # LKJ prior on correlation matrix (1 = uniform)
+  ), #regularisation ontrols the strength of shrinkage on group level effects
   algorithm = "sampling", #sampling is MCMC
   adapt_delta = 0.95, #increasing adapt_delta will result in a smaller step size and fewer divergences
   QR = FALSE  #maybe true for computational purposes
@@ -224,6 +252,7 @@ candidate_model_stan <- stan_lmer(
 ```{r}
 posterior_candidate <- as.data.frame(candidate_model_stan)
 names(posterior_candidate)
+precis(posterior_candidate)
 
 ```
 
@@ -261,9 +290,13 @@ mcmc_areas(posterior_candidate,
   ggtitle("Posterior distribution of the effects by candidate")+
   
   xlab("Effect size")+
-  ylab("President")
+  ylab("President")+
+  theme_minimal()+
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray50")
 
-ggsave("posteriorEffectsCandidate.png")
+  
+  
+  ggsave("posteriorEffectsCandidate.png", height = 4, width = 7)
 
 
 ```
@@ -426,7 +459,7 @@ ggplot(significant_diffs, aes(x = median, y = reorder(Contrast, median))) +
   geom_errorbarh(aes(xmin = lower, xmax = upper, color = comparison_type), height = 0.3) +
   geom_vline(xintercept = 0, linetype = "dashed", color = "gray50") +
   labs(
-    title = "Significant Pairwise Differences",
+    title = "Statistically Credible Pairwise Differences",
     x = "Difference in Effect Size",
     y = "Candidate Contrast",
     color = "Comparison Type"
@@ -440,9 +473,40 @@ ggplot(significant_diffs, aes(x = median, y = reorder(Contrast, median))) +
 
 
 
-ggsave("significantPairwiseCandidates.png")
+ggsave("significantPairwiseCandidates.png", height = 5, width = 6)
 
 ```
+Only fo the three guys
+```{r}
+lookup_three_guys <- c("Obama", "Trump", "Biden")
+# 1. Filter contrasts where 95% credible interval excludes 0
+significant_diffs_2 <- summary_diffs_labeled %>%
+  filter((candidate1 %in% lookup_three_guys) & (candidate2 %in% lookup_three_guys)) %>% 
+  mutate(Contrast = paste(candidate1, "vs", candidate2))
+
+# 2. Plot only significant contrasts
+ggplot(significant_diffs_2, aes(x = median, y = reorder(Contrast, median))) +
+  geom_point(aes(color = comparison_type), size = 2) +
+  geom_errorbarh(aes(xmin = lower, xmax = upper, color = comparison_type), height = 0.15, linewidth = 1) +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "gray50") +
+  labs(
+    title = "Pairwise Differences of Obama, Biden and Trump",
+    x = "Difference in Effect Size",
+    y = "Candidate Contrast",
+    color = "Comparison Type"
+  ) +
+  scale_color_manual(values = c(
+    "Democrat vs Democrat" = "skyblue",
+    "Republican vs Republican" = "firebrick",
+    "Democrat vs Republican" = "purple"
+  )) +
+  theme_minimal()
+
+ggsave("pairwise_threeGuys.png", height = 5, width = 6)
+```
+
+
+
 All good
 
 *Do something with the topics. Maybe check how different values of bold are apparent in different topics - what topics are highest in bold maybe interaction between this and party? Also some simple stuff: what topics are most presently discussed (maybe over time). Also include, maybe just some short statistics, about the level of similarity, now that we have it.*
